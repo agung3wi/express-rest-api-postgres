@@ -5,7 +5,7 @@ const service = {
 
 
     transaction: true,
-    task: null,
+    task: 'super-admin',
     input: function (request) {
         return request.body
     },

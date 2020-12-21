@@ -107,6 +107,24 @@ var CoreService = function (service) {
                     port: process.env.DB_PORT || 5432
                 }
             });
+
+            db.select = async function (sql, params = []) {
+                return db.raw(sql, params)
+                    .then(res => {
+                        return res.rows;
+                    }).catch(err => {
+                        throw err;
+                    });
+            }
+            db.row = async function (sql, params = []) {
+                return db.select(sql, params)
+                    .then(res => {
+                        return res[0];
+                    }).catch(err => {
+                        throw err;
+                    });
+            }
+
             var moment = require('moment');
             var inputData = service.input(event);
 
@@ -118,30 +136,29 @@ var CoreService = function (service) {
             if (service.task !== undefined && service.task !== null) {
                 var token = event.headers.authorization;
                 if (token === undefined || token === null) {
-                    return CoreResponse.fail(response, "Token Not found", {}, 403);
+                    return CoreResponse.fail(response, "Forbidden", {}, 401);
                 }
 
                 try {
                     var claim = jwt.verify(token, process.env.APP_KEY);
                     const result = await db.raw("SELECT 1 FROM api_token WHERE api_token=? AND user_id=?", [claim.api_token, claim.user_id]);
                     if (result.rows.length == 0) {
-                        return CoreResponse.fail(response, "Unauthorized", {}, 403);
+                        return CoreResponse.fail(response, "Unauthorized", {}, 401);
                     }
 
                     session.user_id = claim.user_id;
                     session.api_token = claim.api_token;
                 } catch (err) {
-                    return CoreResponse.fail(response, "Unauthorized", {}, 403);
-                }
-
-                if (service.role !== undefined && service.role !== null) {
-                    if (service.role != claim.role_name) {
-                        return CoreResponse.fail(response, "Unauthorized", {}, 403);
-                    }
+                    return CoreResponse.fail(response, "Unauthorized", {}, 401);
                 }
 
                 if (service.task !== undefined && service.task !== null) {
-                    if (claim.tasks.indexOf(service.task) == -1) {
+                    console.log([claim.user_id, service.task])
+                    const checkAllowPermission = await db.row(`SELECT 1 FROM tasks A
+                    INNER JOIN role_task B ON B.task_id = A.id 
+                    INNER JOIN users C ON C.id = ? AND C.role_id = B.role_id
+                        WHERE A.task_name = ?`, [claim.user_id, service.task]);
+                    if (is_blank(checkAllowPermission)) {
                         return CoreResponse.fail(response, "Unauthorized", {}, 403);
                     }
                 }
